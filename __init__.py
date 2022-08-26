@@ -24,7 +24,6 @@ sv_help = '''
 [怎么拆] 接防守队角色名 查询竞技场解法
 [点赞] 接作业id 评价作业
 [点踩] 接作业id 评价作业
-# 图片多队查询时，优先级越高越好
 '''.strip()
 sv = Service('pcr-arena', help_=sv_help, bundle='pcr查询')
 
@@ -400,8 +399,8 @@ async def _arena_query(bot, ev: CQEvent, region: int):
                         soutp += nam.name + " "
                         squads.append(nam.id)
                     #squads.append(int(squad["up"]) - int(squad["down"]))
-                    #squads.append(num)
-                    squads.append(int(squad["up"])*10 /(int(squad["down"]+int(squad["up"])+1)))
+                    # squads.append(num)
+                    squads.append(int(squad["up"]) * 10 / (int(squad["down"] + int(squad["up"]) + 1)))
                     squads.append(soutp[:-1])
                     li.append(copy.deepcopy(squads))
                 lis.append(copy.deepcopy(li))
@@ -416,7 +415,8 @@ async def _arena_query(bot, ev: CQEvent, region: int):
                     await __arena_query(bot, ev, region, boxDict[num])
             return
         le = len(lis)
-        outp = ""
+        outp = []
+        outp_priority = []
         cnt = 0
         if le == 3:
             s1 = lis[0]
@@ -429,9 +429,12 @@ async def _arena_query(bot, ev: CQEvent, region: int):
                         if len(temp) == len(set(temp)):
                             cnt += 1
                             if cnt <= 8:
-                                outp += f"优先级：{x[-2]+y[-2]+z[-2]:03.1f}\n第{1}队：{x[-1]}\n第{2}队：{y[-1]}\n第{3}队：{z[-1]}\n"
-        if outp != "":
-            outp = "三队无冲配队：\n" + outp
+                                outp.append(f"第{1}队：{x[-1]}\n第{2}队：{y[-1]}\n第{3}队：{z[-1]}\n")
+                                outp_priority.append(-(x[-2] + y[-2] + z[-2]))
+                                #outp += f"优先级：{x[-2]+y[-2]+z[-2]:03.1f}\n第{1}队：{x[-1]}\n第{2}队：{y[-1]}\n第{3}队：{z[-1]}\n"
+        if outp != []:
+            outp_priority, outp = zip(*sorted(zip(outp_priority, outp)))
+            outp = "三队无冲配队：\n" + '\n'.join(outp)
             await bot.finish(ev, outp)
         for i in range(le - 1):
             for j in range(i + 1, le):
@@ -442,9 +445,12 @@ async def _arena_query(bot, ev: CQEvent, region: int):
                         if not (set(x[:-2]) & set(y[:-2])):
                             cnt += 1
                             if cnt < 8:
-                                outp += f"优先级：{x[-2]+y[-2]:03f.1}\n第{i+1}队：{x[-1]}\n第{j+1}队：{y[-1]}\n"
-        if outp != "":
-            outp = "两队无冲配队：\n" + outp
+                                outp.append(f"第{i+1}队：{x[-1]}\n第{j+1}队：{y[-1]}\n")
+                                outp_priority.append(-(x[-2] + y[-2]))
+                                #outp += f"优先级：{x[-2]+y[-2]:03.1f}\n第{i+1}队：{x[-1]}\n第{j+1}队：{y[-1]}\n"
+        if outp != []:
+            outp_priority, outp = zip(*sorted(zip(outp_priority, outp)))
+            outp = "两队无冲配队：\n" + '\n'.join(outp)
             await bot.finish(ev, outp)
         outp = "不存在无冲配队！"
         for num, i in enumerate(lis):
