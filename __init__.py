@@ -529,13 +529,12 @@ async def __arena_query(bot, ev: CQEvent, region: int, defen="", raw=0):
     #     "你赞过" if e['user_like'] > 0 else "你踩过" if e['user_like'] < 0 else ""
     # ]) for e in res]
 
-    # defen = [ chara.fromid(x).name for x in defen ]
-    # defen = f"防守方【{' '.join(defen)}】"
-    at = str(MessageSegment.at(ev.user_id))
+    defen = [chara.fromid(x).name for x in defen]
+    defen = f"防守方【{' '.join(defen)}】"
+    # at = str(MessageSegment.at(ev.user_id))
 
     msg = [
-        # defen,
-        f'已为骑士{at}查询到以下进攻方案：',
+        defen,
         str(teams),
         # '作业评价：',
         # *details,
@@ -543,14 +542,11 @@ async def __arena_query(bot, ev: CQEvent, region: int, defen="", raw=0):
     ]
     if region == 1:
         msg.append('※使用"b怎么拆"或"台怎么拆"可按服过滤')
-    msg.append('https://www.pcrdfans.com/battle')
+    # msg.append('https://www.pcrdfans.com/battle')
 
     sv.logger.debug('Arena sending result...')
     await bot.send(ev, '\n'.join(msg))
     sv.logger.debug('Arena result sent!')
-
-    if ev.group_id == 1017321923:
-        await silence(ev, 5 * 60)
 
 
 # @sv.on_prefix('点赞')
