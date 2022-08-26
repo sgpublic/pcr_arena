@@ -1,3 +1,4 @@
+from random import random
 import re
 import time
 import asyncio
@@ -80,14 +81,25 @@ async def arena_query_test(bot, ev):
 
 
 async def render_atk_def_teams(entries, border_pix=5):
+    '''
+    entries = [ {'atk': [int], 'up': int, 'down': int } ]
+    '''
     n = len(entries)
     icon_size = 64
     im = Image.new('RGBA', (5 * icon_size + 100, n * (icon_size + border_pix) - border_pix), (255, 255, 255, 255))
     font = ImageFont.truetype('msyh.ttc', 16)
     draw = ImageDraw.Draw(im)
     for i, e in enumerate(entries):
+        if len(e) == 0:
+            continue
+
         y1 = i * (icon_size + border_pix)
         y2 = y1 + icon_size
+        ee = True
+        if e == "placeholder":
+            ee = False
+            e = {'atk': [chara.fromid(9000) for _ in range(5)]}
+
         for j, c in enumerate(e['atk']):
             x1 = j * icon_size
             x2 = x1 + icon_size
@@ -97,17 +109,19 @@ async def render_atk_def_teams(entries, border_pix=5):
             except:
                 icon = c.render_icon(icon_size)
                 im.paste(icon, (x1, y1, x2, y2), icon)
-
-        thumb_up = thumb_up_a if e['user_like'] > 0 else thumb_up_i
-        thumb_down = thumb_down_a if e['user_like'] < 0 else thumb_down_i
-        x1 = 5 * icon_size + 10
-        x2 = x1 + 16
-        im.paste(thumb_up, (x1, y1 + 12, x2, y1 + 28), thumb_up)
-        im.paste(thumb_down, (x1, y1 + 39, x2, y1 + 55), thumb_down)
-        #draw.text((x1, y1), e['qkey'], (0, 0, 0, 255), font)
-        draw.text((x1 + 25, y1 + 10), f"{e['up']}", (0, 0, 0, 255), font)
-        #draw.text((x1+25, y1+35), f"{e['down']}+{e['my_down']}" if e['my_down'] else f"{e['down']}", (0, 0, 0, 255), font)
-        draw.text((x1 + 25, y1 + 35), f"{e['down']}", (0, 0, 0, 255), font)
+        if ee:
+            #thumb_up = thumb_up_a if e['user_like'] > 0 else thumb_up_i
+            thumb_up = thumb_up_a
+            #thumb_down = thumb_down_a if e['user_like'] < 0 else thumb_down_i
+            thumb_down = thumb_down_a
+            x1 = 5 * icon_size + 10
+            x2 = x1 + 16
+            im.paste(thumb_up, (x1, y1 + 12, x2, y1 + 28), thumb_up)
+            im.paste(thumb_down, (x1, y1 + 39, x2, y1 + 55), thumb_down)
+            #draw.text((x1, y1), e['qkey'], (0, 0, 0, 255), font)
+            draw.text((x1 + 25, y1 + 10), f"{e['up']}", (0, 0, 0, 255), font)
+            #draw.text((x1+25, y1+35), f"{e['down']}+{e['my_down']}" if e['my_down'] else f"{e['down']}", (0, 0, 0, 255), font)
+            draw.text((x1 + 25, y1 + 35), f"{e['down']}", (0, 0, 0, 255), font)
     return im
 
 
@@ -393,15 +407,16 @@ async def _arena_query(bot, ev: CQEvent, region: int):
                 tot += 1
                 for num, squad in enumerate(res):
                     soutp = ""
-                    squads = []
+                    squads = []  # [int int int int int 评价 string 原始阵容]
                     for nam in squad["atk"]:
                         # print(nam)
                         soutp += nam.name + " "
                         squads.append(nam.id)
                     #squads.append(int(squad["up"]) - int(squad["down"]))
                     # squads.append(num)
-                    squads.append(int(squad["up"]) * 10 / (int(squad["down"] + int(squad["up"]) + 1)))
+                    squads.append(int(squad["up"]) * 10 / (int(squad["down"] + int(squad["up"]) + 1)) + random() / 100)
                     squads.append(soutp[:-1])
+                    squads.append(copy.deepcopy(squad))
                     li.append(copy.deepcopy(squads))
                 lis.append(copy.deepcopy(li))
             await asyncio.sleep(2)
@@ -417,6 +432,7 @@ async def _arena_query(bot, ev: CQEvent, region: int):
         le = len(lis)
         outp = []
         outp_priority = []
+        outp_img = []
         cnt = 0
         if le == 3:
             s1 = lis[0]
@@ -425,40 +441,71 @@ async def _arena_query(bot, ev: CQEvent, region: int):
             for x in s1:
                 for y in s2:
                     for z in s3:
-                        temp = x[:-2] + y[:-2] + z[:-2]
+                        temp = x[:-3] + y[:-3] + z[:-3]
                         if len(temp) == len(set(temp)):
                             cnt += 1
                             if cnt <= 8:
-                                outp.append(f"第{1}队：{x[-1]}\n第{2}队：{y[-1]}\n第{3}队：{z[-1]}\n")
-                                outp_priority.append(-(x[-2] + y[-2] + z[-2]))
+                                outp_img.append([x[-1], y[-1], z[-1]])
+                                outp.append(f"第{1}队：{x[-2]}\n第{2}队：{y[-2]}\n第{3}队：{z[-2]}\n")
+                                outp_priority.append(-(x[-3] + y[-3] + z[-3]))
                                 #outp += f"优先级：{x[-2]+y[-2]+z[-2]:03.1f}\n第{1}队：{x[-1]}\n第{2}队：{y[-1]}\n第{3}队：{z[-1]}\n"
+
         if outp != []:
-            outp_priority, outp = zip(*sorted(zip(outp_priority, outp)))
-            outp = "三队无冲配队：\n" + '\n'.join(outp)
-            await bot.finish(ev, outp)
+            outp_priority, outp, outp_img = zip(*sorted(zip(outp_priority, outp, outp_img)))
+            outp_render = []
+            for i in outp_img:
+                outp_render += i
+                outp_render.append([])
+            # for i in range(len(outp_priority)):
+            #     print(f'优先级={outp_priority[i]:03.1f}\n阵容=\n{outp[i]}\n原始数据={outp_img[i]}')
+            #outp = "三队无冲配队：\n" + '\n'.join(outp)
+            # await bot.finish(ev, outp)
+            teams = await render_atk_def_teams(outp_render[:-1])
+            teams = pic2b64(teams)
+            teams = MessageSegment.image(teams)
+            await bot.finish(ev, str(teams))
+
         for i in range(le - 1):
             for j in range(i + 1, le):
                 s1 = lis[i]
                 s2 = lis[j]
                 for x in s1:
                     for y in s2:
-                        if not (set(x[:-2]) & set(y[:-2])):
+                        if not (set(x[:-3]) & set(y[:-3])):
                             cnt += 1
                             if cnt < 8:
-                                outp.append(f"第{i+1}队：{x[-1]}\n第{j+1}队：{y[-1]}\n")
-                                outp_priority.append(-(x[-2] + y[-2]))
+                                if le == 2:
+                                    outp_img_space = ["placeholder", "placeholder"]
+                                else:
+                                    outp_img_space = ["placeholder", "placeholder", "placeholder"]
+                                outp_img_space[i] = x[-1]
+                                outp_img_space[j] = y[-1]
+                                outp_img.append(copy.deepcopy(outp_img_space))
+                                outp.append(f"第{i+1}队：{x[-2]}\n第{j+1}队：{y[-2]}\n")
+                                outp_priority.append(-(x[-3] + y[-3]))
                                 #outp += f"优先级：{x[-2]+y[-2]:03.1f}\n第{i+1}队：{x[-1]}\n第{j+1}队：{y[-1]}\n"
         if outp != []:
-            outp_priority, outp = zip(*sorted(zip(outp_priority, outp)))
-            outp = "两队无冲配队：\n" + '\n'.join(outp)
-            await bot.finish(ev, outp)
+            outp_priority, outp, outp_img = zip(*sorted(zip(outp_priority, outp, outp_img)))
+            outp_render = []
+            for i in outp_img:
+                outp_render += i
+                outp_render.append([])
+            # for i in range(len(outp_priority)):
+            #     print(f'优先级={outp_priority[i]:03.1f}\n阵容=\n{outp[i]}\n原始数据={outp_img[i]}')
+            #outp = "三队无冲配队：\n" + '\n'.join(outp)
+            # await bot.finish(ev, outp)
+            teams = await render_atk_def_teams(outp_render[:-1])
+            teams = pic2b64(teams)
+            teams = MessageSegment.image(teams)
+            await bot.finish(ev, str(teams))
+
         outp = "不存在无冲配队！"
         for num, i in enumerate(lis):
             if i != []:
                 outp += f"\n第{num+1}队的解法为：\n"
                 for j in i:
-                    outp += j[-1] + "\n"
-        await bot.finish(ev, outp)
+                    outp += j[-2] + "\n"
+        await bot.finish(ev, outp.strip())
 
     else:
         await __arena_query(bot, ev, region)
