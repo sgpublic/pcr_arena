@@ -13,6 +13,7 @@ from hoshino.util import FreqLimiter, concat_pic, pic2b64, silence
 from .. import chara
 from .record import update_dic
 from os.path import dirname, join, exists
+from os import remove
 import numpy as np
 import json
 from io import BytesIO
@@ -37,13 +38,17 @@ aliases_b = tuple('b' + a for a in aliases) + tuple('B' + a for a in aliases)
 aliases_b = list(aliases_b)
 aliases_b.append('bjjc')
 aliases_b = tuple(aliases_b)
+
 aliases_tw = tuple('台' + a for a in aliases)
 aliases_tw = list(aliases_tw)
 aliases_tw.append('台jjc')
+aliases_tw.append('tjjc')
 aliases_tw = tuple(aliases_tw)
+
 aliases_jp = tuple('日' + a for a in aliases)
 aliases_jp = list(aliases_jp)
 aliases_jp.append('日jjc')
+aliases_jp.append('rjjc')
 aliases_jp = tuple(aliases_jp)
 
 try:
@@ -511,6 +516,25 @@ async def _arena_query(bot, ev: CQEvent, region: int):
         await __arena_query(bot, ev, region)
 
 
+def remove_buffer(uid: str):
+    curpath = dirname(__file__)
+    bufferpath = join(curpath, 'buffer/buffer.json')
+
+    buffer = {}
+    with open(bufferpath, 'r', encoding="utf-8") as fp:
+        buffer = json.load(fp)
+
+    try:
+        remove(join(curpath, f'buffer/{uid}.json'))
+    except:
+        pass
+
+    if uid in buffer:
+        buffer.pop(uid)
+        with open(bufferpath, 'w', encoding="utf-8") as fp:
+            json.dump(buffer, fp, ensure_ascii=False, indent=4)
+
+
 async def __arena_query(bot, ev: CQEvent, region: int, defen="", raw=0):
     uid = ev.user_id
     unknown = ""
@@ -526,7 +550,7 @@ async def __arena_query(bot, ev: CQEvent, region: int, defen="", raw=0):
         msg = f'无法识别"{unknown}"' if score < 70 else f'无法识别"{unknown}" 您说的有{score}%可能是{name}'
         await bot.finish(ev, msg)
     if not defen:
-        await bot.finish(ev, '查询请发送"b/日/台jjc+防守队伍"，无需+号', at_sender=True)
+        await bot.finish(ev, '查询请发送"b/r/tjjc+防守队伍"，无需+号', at_sender=True)
     if len(defen) > 5:
         await bot.finish(ev, '编队不能多于5名角色', at_sender=True)
     if len(defen) < 5:
@@ -538,13 +562,14 @@ async def __arena_query(bot, ev: CQEvent, region: int, defen="", raw=0):
     if 1004 in defen:
         await bot.send(ev, '\n⚠️您正在查询普通版炸弹人\n※万圣版可用万圣炸弹人/瓜炸等别称', at_sender=True)
 
-    # print(defen)
+    key = ''.join([str(x) for x in sorted(defen)])
     # 执行查询
     sv.logger.info('Doing query...')
     res = None
     try:
         res = await arena.do_query(defen, uid, region, raw)
     except hoshino.aiorequests.HTTPError as e:
+        remove_buffer(key)
         code = e.response["code"]
         if code == 117:
             await bot.finish(ev, "高峰期服务器限流！请前往pcrdfans.com/battle")
@@ -554,15 +579,18 @@ async def __arena_query(bot, ev: CQEvent, region: int, defen="", raw=0):
 
     # 处理查询结果
     if res is None:
+        remove_buffer(key)
         if not raw:
             await bot.finish(ev, '数据库未返回数据，请再次尝试查询或前往pcrdfans.com', at_sender=True)
         else:
             return []
     if not len(res):
+        remove_buffer(key)
         if not raw:
             await bot.finish(ev, '抱歉没有查询到解法\n作业上传请前往pcrdfans.com', at_sender=True)
         else:
             return []
+
     res = res[:min(8, len(res))]  # 限制显示数量，截断结果
     if raw:
         return res
