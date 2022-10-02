@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import os
 import time
@@ -15,6 +16,9 @@ except:
 
 from os.path import dirname, join, exists
 from os import remove
+from asyncio import Lock
+
+querylock = Lock()
 
 logger = sv.logger
 """
@@ -118,7 +122,7 @@ def __get_auth_key():
 
 async def do_query(id_list, user_id, region=1, raw=0):
     defen = id_list
-    key = ''.join([str(x) for x in sorted(defen)])
+    key = ''.join([str(x) for x in sorted(defen)]) + str(region)
     value = int(time.time())
 
     curpath = dirname(__file__)
@@ -153,48 +157,52 @@ async def do_query(id_list, user_id, region=1, raw=0):
             "region": region,
         }
         logger.debug(f"Arena query {payload=}")
-        try:
-            resp = await aiorequests.post(
-                "https://api.pcrdfans.com/x/v1/search",
-                headers=header,
-                json=payload,
-                timeout=10,
-            )
-            res = await resp.json()
-            logger.debug(f"len(res)={len(res)}")
-        except Exception as e:
-            logger.exception(e)
-            isquerysucceed = False
-            if degrade_result:
-                result = degrade_result
-            else:
-                return None
 
-        if res["code"]:
-            logger.error(f"Arena query failed.\nResponse={res}\nPayload={payload}")
-            isquerysucceed = False
-            if degrade_result:
-                result = degrade_result
-            else:
-                raise aiorequests.HTTPError(response=res)
+        if querylock.locked():
+            await asyncio.sleep(5)
+        async with querylock:
+            try:
+                resp = await aiorequests.post(
+                    "https://api.pcrdfans.com/x/v1/search",
+                    headers=header,
+                    json=payload,
+                    timeout=20,
+                )
+                res = await resp.json()
+                logger.debug(f"len(res)={len(res)}")
+            except Exception as e:
+                logger.exception(e)
+                isquerysucceed = False
+                if degrade_result:
+                    result = degrade_result
+                else:
+                    return None
 
-        result = res.get("data", {}).get("result")
-        if result is None:
-            isquerysucceed = False
-            if degrade_result:
-                result = degrade_result
-            else:
-                return None
+            if res["code"]:
+                logger.error(f"Arena query failed.\nResponse={res}\nPayload={payload}")
+                isquerysucceed = False
+                if degrade_result:
+                    result = degrade_result
+                else:
+                    raise aiorequests.HTTPError(response=res)
 
-        if isquerysucceed:
-            buffer[key] = value
+            result = res.get("data", {}).get("result")
+            if result is None:
+                isquerysucceed = False
+                if degrade_result:
+                    result = degrade_result
+                else:
+                    return None
 
-            with open(bufferpath, 'w', encoding="utf-8") as fp:
-                json.dump(buffer, fp, ensure_ascii=False, indent=4)
+            if isquerysucceed:
+                buffer[key] = value
 
-            homeworkpath = join(curpath, f'buffer/{key}.json')
-            with open(homeworkpath, 'w', encoding="utf-8") as fp:
-                json.dump(result, fp, ensure_ascii=False, indent=4)
+                with open(bufferpath, 'w', encoding="utf-8") as fp:
+                    json.dump(buffer, fp, ensure_ascii=False, indent=4)
+
+                homeworkpath = join(curpath, f'buffer/{key}.json')
+                with open(homeworkpath, 'w', encoding="utf-8") as fp:
+                    json.dump(result, fp, ensure_ascii=False, indent=4)
 
     ret = []
     for entry in result:

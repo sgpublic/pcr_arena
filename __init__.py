@@ -80,9 +80,9 @@ async def arena_query_jp(bot, ev):
     await _arena_query(bot, ev, region=4)
 
 
-@sv.on_prefix(('tjjc'))
-async def arena_query_test(bot, ev):
-    await _arena_query(bot, ev, region=-20)
+# @sv.on_prefix(('testjjc'))
+# async def arena_query_test(bot, ev):
+#     await _arena_query(bot, ev, region=-20)
 
 
 async def render_atk_def_teams(entries, border_pix=5):
@@ -351,8 +351,8 @@ async def getUnit(img2):
                 nam = chara.fromid(uid).name
             except:
                 pass
-            print(f'{nam} {str(uid6)[-2]}x {100-similarity}% {uid6}')
-        print()
+            # print(f'{nam} {str(uid6)[-2]}x {100-similarity}% {uid6}')
+        # print()
         uid = int(lis[0][0]) // 100
         if int(lis[0][0]) == 108231 and int(lis[1][0]) == 100731 and int(lis[1][1]) - int(lis[0][1]) <= 5:
             uid = 1007
@@ -374,7 +374,6 @@ async def _arena_query(bot, ev: CQEvent, region: int):
 
     if not lmt.check(uid):
         await bot.finish(ev, '您查询得过于频繁，请稍等片刻', at_sender=True)
-    lmt.start_cd(uid)
 
     # 处理输入数据
     defen = ""
@@ -402,6 +401,7 @@ async def _arena_query(bot, ev: CQEvent, region: int):
         if len(boxDict) > 3:
             await bot.finish(ev, "请截图pjjc详细对战记录（对战履历详情）（含敌我双方2或3队阵容）")
         tot = 0
+        lmt.start_cd(uid)
         for i in boxDict:
             li = []
             res = await __arena_query(bot, ev, region, i, 1)
@@ -562,8 +562,9 @@ async def __arena_query(bot, ev: CQEvent, region: int, defen="", raw=0):
     if 1004 in defen:
         await bot.send(ev, '\n⚠️您正在查询普通版炸弹人\n※万圣版可用万圣炸弹人/瓜炸等别称', at_sender=True)
 
-    key = ''.join([str(x) for x in sorted(defen)])
+    key = ''.join([str(x) for x in sorted(defen)]) + str(region)
     # 执行查询
+    lmt.start_cd(uid)
     sv.logger.info('Doing query...')
     res = None
     try:
