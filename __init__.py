@@ -1,9 +1,10 @@
+import base64
 from random import random
 import re
 import time
 import asyncio
 from collections import defaultdict
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageColor
 
 import hoshino
 from hoshino import Service, R
@@ -11,6 +12,7 @@ from hoshino.typing import *
 from hoshino.util import FreqLimiter, concat_pic, pic2b64, silence
 
 from .. import chara
+from .. import _pcr_data
 from .record import update_dic
 from os.path import dirname, join, exists
 from os import remove
@@ -80,9 +82,9 @@ async def arena_query_jp(bot, ev):
     await _arena_query(bot, ev, region=4)
 
 
-# @sv.on_prefix(('testjjc'))
-# async def arena_query_test(bot, ev):
-#     await _arena_query(bot, ev, region=-20)
+@sv.on_prefix(('testjjc'))
+async def arena_query_test(bot, ev):
+    await _arena_query(bot, ev, region=-20)
 
 
 async def render_atk_def_teams(entries, border_pix=5):
@@ -131,9 +133,7 @@ async def render_atk_def_teams(entries, border_pix=5):
 
 
 async def getBox(img):
-    img = img.convert("RGBA")
-    boxDict, s = await getPos(img)
-    return boxDict, s
+    return await getPos(img)
 
 
 curpath = dirname(__file__)
@@ -146,25 +146,24 @@ data_processed = None
 
 
 async def cut_image(image, hash_size=16):
-    # 将图像缩小成(16+1)*16并转化成灰度图
+    '''
+    将图像缩小成(16+1)*16并转化成灰度图
+    :param image: PIL.Image
+    :return list[int]
+    '''
+
     image1 = image.resize((hash_size + 1, hash_size), Image.ANTIALIAS).convert('L')
     pixel = list(image1.getdata())
     return pixel
 
 
 async def trans_hash(lists):
-    # 比较列表中相邻元素大小
-    j = len(lists) - 1
-    hash_list = []
-    m, n = 0, 1
-    for i in range(j):
-        if lists[m] > lists[n]:
-            hash_list.append(1)
-        else:
-            hash_list.append(0)
-        m += 1
-        n += 1
-    return hash_list
+    '''
+    比较列表中相邻元素大小
+    :param lists: list[int]
+    :return list[bool]
+    '''
+    return [1 if lists[index - 1] > val else 0 for index, val in enumerate(lists)][1:]
 
 
 async def difference_value(image_lists):
@@ -201,32 +200,36 @@ async def process_data():
 
 
 async def cutting(img, mode):
+    '''
+    :param img: 传入的待识别的原图片 PIL格式
+    :param mode: mode=1：返回图片中最大的长方形区域，以及该区域的定位点 [PIL.Image, [x, y, w, h]] ; mode=2: 返回两个列表，列表中每个元素为正方形区域在原图的[x, y, w, h]。第一个列表为聚类结果，第二个列表为排除结果。若无正方形区域，返回[], []。
+    '''
     im_grey = img.convert('L')
     totArea = (im_grey.size)[0] * (im_grey.size)[1]
-    im_grey = im_grey.point(lambda x: 255 if x > 210 else 0)
+    im_grey = im_grey.point(lambda x: 255 if x > 210 else 0)  # 没有用自带的二值化。考虑修改，使用更合适的函数。
     thresh = np.array(im_grey)
 
     # cv2.findContours. opencv3版本会返回3个值，opencv2和4只返回后两个值
     #img2, contours, hier = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-    contours, hier = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    contours, hier = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)  # 获取轮廓
     img2 = thresh
 
     lis = []
-    icon = []
-    icon_area = {}
+    icon = []  # 每个元素为：[边长，[矩阵左上点坐标，矩阵宽高]]
+    # icon_area = {}  # key为边长 value为个数
     for i in range(len(contours)):
-        area = cv2.contourArea(contours[i])  # 计算轮廓面积，但是可能和像素点区域不太一样 收藏
+        area = cv2.contourArea(contours[i])  # 计算contour包围的像素点个数
         lis.append(area)
         if area > 500:
             if mode == 2:
-                x, y, w, h = cv2.boundingRect(contours[i])
-                if w / h > 0.95 and w / h < 1.05:
+                x, y, w, h = cv2.boundingRect(contours[i])  # 获取contour的aabb包围盒
+                if w / h > 0.95 and w / h < 1.05:  # 近似正方形
                     are = (w + h) // 2
-                    areaRatio = are * are / totArea * 100
+                    areaRatio = are * are / totArea * 100  # 获取该范围占整个输入图像的占比
                     # print(f"{areaRatio:2f}%")
-                    if areaRatio >= 0.5:
+                    if areaRatio >= 0.5:  # 过滤占比小于0.5%的正方形（可能为文字）
                         icon.append([are, [x, y, w, h]])
-                        icon_area[are] = icon_area.setdefault(are, 0) + 1
+                        # icon_area[are] = icon_area.setdefault(are, 0) + 1
     # print()
     if mode == 1:
         i = lis.index(max(lis))
@@ -236,21 +239,49 @@ async def cutting(img, mode):
         img4 = Image.fromarray(img3)
         return img4, [x, y, w, h]
     if mode == 2:
-        if icon_area == {}:
-            return False
-        icon_area = sorted(icon_area.items(), key=lambda x: x[1], reverse=True)
-        # print(icon_area)
-        accepted_area = [icon_area[0][0]]
-        for i in icon_area:
-            if abs(i[0] - accepted_area[0]) <= 5:
-                accepted_area.append(i[0])
-        # print(accepted_area)
-        icon = list(sorted(map(lambda x: x[1], filter(lambda x: x[0] in accepted_area, icon)), key=lambda x: x[1] * 100000 + x[0]))
-        # print(icon)
-        return icon
+        if len(icon) == 0:
+            return [], []
+
+        # 对边长作简易聚类分析
+        kinds = {}  # 边长: [[],[],[],...,[]]
+        for i in icon:
+            sidelen = i[0]
+            category = -1
+            for kind in kinds:
+                ratio = sidelen / kind
+                if ratio > 0.9 and ratio < 1.1:  # 将边长相差10%以内作为一类
+                    category = kind
+                    kinds[kind].append(i[1])
+                    break
+            if category == -1:
+                kinds[sidelen] = [i[1]]
+
+        def clusterWeight(x):
+            sidelen = x[0]
+            val = len(x[1])
+            if val == 5:  # 该类有5个元素，优先返回。第二关键字为边长（从大到小）。
+                return 5000000 + sidelen
+            if val % 5 == 0:  # 该类元素个数为5的倍数，次优先返回。
+                return 1000000 + sidelen
+            return val * 10000 + sidelen
+
+        kinds = sorted(kinds.items(), key=clusterWeight, reverse=True)
+        kind = kinds[0]  # (边长, [[],[]])
+        if len(kind[1]) % 5 == 0:  # 存在某一类，其元素个数为5的倍数，返回该类
+            otherborder = []
+            for x in range(1, len(kinds)):
+                otherborder += kinds[x][1]
+            return kind[1], otherborder
+        else:
+            return [x[1] for x in icon], []  # 否则返回所有找到的正方形区域，由后续程序进一步判断
 
 
 async def cut(img, border):
+    '''
+    :param img: 待裁剪图片 PIL.Image
+    :param border: 裁剪范围 [x, y, w, h]
+    :return 裁剪后图像 PIL.Image
+    '''
     x, y, w, h = border
     img = np.array(img)
     img = img[y + 2:y + h - 2, x + 2:x + w - 2]
@@ -258,27 +289,59 @@ async def cut(img, border):
     return img
 
 
-async def getPos(img):
+async def getPos(img: Image):
+    '''
+    :param img: 待识别图片 PIL.Image
+    :return 识别出的阵容的坐标, 识别出的阵容角色字符串 [[第1队第1个角色(int), 1-2, ..., 1-5], [2-1, ..., 2-5], [3-1, ..., 3-5]], str；若识别失败，返回[], ""
+    '''
+    img = img.convert("RGBA")
     im_grey = img
+
+    actual_img = img
+    actual_x = 0
+    actual_y = 0
+
+    nowcolor = 0
+    outpImg = Image.new(mode="RGBA", size=img.size, color=ImageColor.getrgb(f'rgb({nowcolor},{nowcolor},{nowcolor})'))
+    outpImgText = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    outpImgTextDraw = ImageDraw.Draw(outpImgText)
+    useChinese = True
+    try:
+        outpImgTextFont = ImageFont.truetype("msyhbd.ttc", 16)
+    except:
+        useChinese = False
     cnt = 0
     while cnt <= 5:
         bo = False
         cnt += 1
-        border = await cutting(im_grey, 2)
-        if border == False:
+        border, otherborder = await cutting(im_grey, 2)  # 获取当前图像中的正方形区域
+        if len(border) == 0:  # 如果莫得 说明需要翻转图像的黑白
             bo = True
         else:
-            border = sorted(border, key=lambda x: x[1] - x[0] * 10000)
-            x, y, w, h = border[0]  # 列 行 宽 长
-            img_border = img.crop([x + 2, y + 2, x + w - 2, y + h - 2])
-            xpos = 1  # 列
-            xlast = border[0][0]
-            ypos = 1  # 行
-            ylast = border[0][1]
-            outpDict = {}
-            if len(border) >= 5:
+            # print(f'cnt={cnt} border={border}') # test
+            # 将正方形区域按照行列分组
+            def highlight(x, color="red"):
+                x, y, w, h = i
+                cropped = img.crop([x + 2, y + 2, x + w - 2, y + h - 2])
+                outpImgText.paste(cropped, (actual_x + x + 2, actual_y + y + 2, actual_x + x + w - 2, actual_y + y + h - 2))
+                outpImgTextDraw.rectangle((actual_x + x, actual_y + y, actual_x + x + w, actual_y + y + h), fill=None, outline=color, width=4)
+
+            for i in otherborder:
+                highlight(i, 'blue')
+            if len(border) < 5:
+                for i in border:
+                    highlight(i, 'blue')
+            else:
+                border = sorted(border, key=lambda x: x[1] - x[0] * 10000)
+                xpos = 1  # 列
+                xlast = border[0][0]
+                ypos = 1  # 行
+                ylast = border[0][1]
+                outpDict = {}
                 for i in border:
                     x, y, w, h = i
+                    cropped = img.crop([x + 2, y + 2, x + w - 2, y + h - 2])
+                    highlight(i)
 
                     if abs(x - xlast) > w // 2:
                         ypos = 1
@@ -290,16 +353,35 @@ async def getPos(img):
                     ylast = y
                     if ypos in outpDict and len(outpDict[ypos]) >= 5:
                         continue
-                    cropped = img.crop([x + 2, y + 2, x + w - 2, y + h - 2])
-                    unit_id, unit_name = await getUnit(cropped)
+
+                    unit_id, unit_name, similarity = await getUnit(cropped)
                     if unit_name == "Unknown" or unit_id == 0:
                         pass
                     else:
+                        try:
+                            unit_name = min(filter(canDisplay, _pcr_data.CHARA_NAME[unit_id]), key=lambda x: len(x))
+                        except:
+                            pass
                         outpDict[ypos] = [[unit_id, unit_name]] + outpDict.get(ypos, [])
+                        # 在指定位置粘贴图片
+                        # outpImg.paste(cropped, (actual_x + x + 2, actual_y + y + 2)) # 改为从六位uid生成
+                        # 在图片上方标注置unit_name和similarity
+                        if useChinese:
+                            def canDisplay(word: str) -> bool:
+                                for char in word:
+                                    char_unicode = char.encode("unicode-escape").decode()
+                                    if len(char_unicode) == 10:
+                                        return False
+                                return True
+                            outpImgTextDraw.rectangle(outpImgTextDraw.textbbox((actual_x + x, actual_y + y), f'{unit_name} {similarity}%', anchor="ls", font=outpImgTextFont), fill="Red")
+                            outpImgTextDraw.text((actual_x + x, actual_y + y), f'{unit_name} {similarity}%', anchor="ls", fill=(255, 255, 255, 255), font=outpImgTextFont)
+                        else:
+                            outpImgTextDraw.rectangle(outpImgTextDraw.textbbox((actual_x + x, actual_y + y), f'{unit_id} {similarity}%', anchor="ls"), fill="Red")
+                            outpImgTextDraw.text((actual_x + x, actual_y + y), f'{unit_id} {similarity}%', anchor="ls", fill=(255, 255, 255, 255))
 
                 outpDict = list(sorted(outpDict.items(), key=lambda x: x[0]))
                 outpList = []
-                outpName = []
+                outpName = []  # 改为返回图片
                 for i in outpDict:
                     i = i[1]
                     if len(i) >= 5:
@@ -315,13 +397,34 @@ async def getPos(img):
                 outpName = "识别阵容为：\n" + '\n'.join(outpName)
                 # print(outpName)
                 if outpList != []:
-                    return outpList, outpName
+                    def outp_b64(outp_img):
+                        buf = BytesIO()
+                        outp_img.save(buf, format='PNG')
+                        base64_str = f'base64://{base64.b64encode(buf.getvalue()).decode()}'
+                        return f'[CQ:image,file={base64_str}]'
 
-        im_grey, border = await cutting(im_grey, 1)
-        if cnt == 1 or bo:
+                    outpImg = Image.blend(outpImg, actual_img, 0.2)
+                    outpImg.alpha_composite(outpImgText)
+                    # outpImg.show()  # test
+                    outpName = outp_b64(outpImg) + '\n' + outpName
+
+                    return outpList, outpName
+        try:
+            im_grey, border = await cutting(im_grey, 1)  # 获取图片中最大的长方形区域
+        except:
+            return [], ""
+        if cnt == 1 or bo:  # 如果是第一次裁剪，或者识别不到正方形区域，反色
             im_grey = im_grey.point(lambda x: 0 if x > 128 else 255)
-        img = await cut(img, border)
-    return [], []
+        img = await cut(img, border)  # 将原始img也裁剪，和im_grey同步
+        actual_x += border[0]
+        actual_y += border[1]
+
+        nowcolor = (nowcolor + 60) % 300
+        outpImg.paste(ImageColor.getrgb(f'rgb({nowcolor},{nowcolor},{nowcolor})'), (actual_x, actual_y, actual_x + border[2], actual_y + border[3]))
+
+        # outpImg.show()  # test
+
+    return [], ""
 
 
 async def getUnit(img2):
@@ -339,29 +442,15 @@ async def getUnit(img2):
         dic[uid] = await calc_distance_arr(data_processed[uid], img4_arr)
 
     lis = list(sorted(dic.items(), key=lambda x: abs(x[1])))
-    if int(lis[0][1]) <= 92:
-        mi = int(lis[0][1])
-        for uid6, similarity in lis:
-            uid = int(uid6) // 100
-            similarity = int(similarity)
-            if abs(similarity - mi) > 10:
-                break
-            name = "Unknown"
-            try:
-                nam = chara.fromid(uid).name
-            except:
-                pass
-            # print(f'{nam} {str(uid6)[-2]}x {100-similarity}% {uid6}')
-        # print()
-        uid = int(lis[0][0]) // 100
-        if int(lis[0][0]) == 108231 and int(lis[1][0]) == 100731 and int(lis[1][1]) - int(lis[0][1]) <= 5:
-            uid = 1007
-        try:
-            nam = chara.fromid(uid).name
-            return uid, nam
-        except:
-            return uid, "Unknown"
-    return 0, "Unknown"
+
+    similarity = int(lis[0][1])
+    if similarity > 90:  # 没一个相似的
+        return 0, "Unknown", 100 - similarity
+    uid = int(lis[0][0]) // 100
+    try:
+        return uid, chara.fromid(uid).name, 100 - similarity
+    except:
+        return uid, "Unknown", 100 - similarity
 
 
 async def get_pic(address):
@@ -379,13 +468,12 @@ async def _arena_query(bot, ev: CQEvent, region: int):
     defen = ""
     ret = re.match(r"\[CQ:image,file=(.*),url=(.*)\]", str(ev.message))
     if ret:
-        await bot.send(ev, "recognizing")
+        # await bot.send(ev, "recognizing")
         image = Image.open(BytesIO(await get_pic(ret.group(2))))
         boxDict, s = await getBox(image)
         if boxDict == []:
             await bot.finish(ev, "未识别到角色！")
-        # print(s)
-        # print(boxDict)
+
         try:
             await bot.send(ev, s)
         except:
