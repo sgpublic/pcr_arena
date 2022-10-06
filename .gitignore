@@ -1,3 +1,4 @@
 dic.npy
 __pycache__/*
 buffer/
+!buffer/buffer.json
