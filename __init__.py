@@ -62,6 +62,7 @@ except Exception as e:
     sv.logger.exception(e)
 
 
+# 全服=1 b服=2 台服=3 日服=4
 @sv.on_prefix(aliases)
 async def arena_query(bot, ev):
     await _arena_query(bot, ev, region=1)
@@ -332,7 +333,7 @@ async def getPos(img: Image):
                 for i in border:
                     highlight(i, 'blue')
             else:
-                border = sorted(border, key=lambda x: x[1] - x[0] * 10000)
+                border = sorted(border, key=lambda x: x[1] - x[0] * 10000)  # 列第一关键字从右到左 行第二关键字从上到下
                 xpos = 1  # 列
                 xlast = border[0][0]
                 ypos = 1  # 行
@@ -520,7 +521,7 @@ async def _arena_query(bot, ev: CQEvent, region: int):
             for num, i in enumerate(lis):
                 if len(i) > 0:
                     await bot.send(ev, f"仅第{num+1}队查询到解法！")
-                    await __arena_query(bot, ev, region, boxDict[num])
+                    await __arena_query(bot, ev, region, boxDict[num], only_use_cache=True)  # 历史遗留性质的偷懒，好在使用了缓存
             return
         le = len(lis)
         outp = []
@@ -623,7 +624,7 @@ def remove_buffer(uid: str):
             json.dump(buffer, fp, ensure_ascii=False, indent=4)
 
 
-async def __arena_query(bot, ev: CQEvent, region: int, defen="", raw=0):
+async def __arena_query(bot, ev: CQEvent, region: int, defen="", raw=0, only_use_cache=False):
     uid = ev.user_id
     unknown = ""
     if defen == "":
@@ -653,7 +654,7 @@ async def __arena_query(bot, ev: CQEvent, region: int, defen="", raw=0):
     key = ''.join([str(x) for x in sorted(defen)]) + str(region)
     # 执行查询
     lmt.start_cd(uid)
-    res = await arena.do_query(defen, uid, region, raw)
+    res = await arena.do_query(defen, uid, region, raw, -1 if only_use_cache else 1)
 
     # 处理查询结果
     if res is None:
