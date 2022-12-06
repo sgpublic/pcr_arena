@@ -653,18 +653,7 @@ async def __arena_query(bot, ev: CQEvent, region: int, defen="", raw=0):
     key = ''.join([str(x) for x in sorted(defen)]) + str(region)
     # 执行查询
     lmt.start_cd(uid)
-    sv.logger.info('Doing query...')
-    res = None
-    try:
-        res = await arena.do_query(defen, uid, region, raw)
-    except hoshino.aiorequests.HTTPError as e:
-        remove_buffer(key)
-        code = e.response["code"]
-        if code == 117:
-            await bot.finish(ev, "高峰期服务器限流！请前往pcrdfans.com/battle")
-        else:
-            await bot.finish(ev, f'code{code} 查询出错\n请先前往pcrdfans.com进行查询', at_sender=True)
-    sv.logger.info('Got response!')
+    res = await arena.do_query(defen, uid, region, raw)
 
     # 处理查询结果
     if res is None:
@@ -680,7 +669,7 @@ async def __arena_query(bot, ev: CQEvent, region: int, defen="", raw=0):
         else:
             return []
 
-    res = res[:min(8, len(res))]  # 限制显示数量，截断结果
+    res = res[:min(10, len(res))]  # 限制显示数量，截断结果
     if raw:
         return res
     # print(res)

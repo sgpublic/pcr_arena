@@ -123,6 +123,7 @@ def __get_auth_key():
 async def do_query(id_list, user_id, region=1, raw=0):
     defen = id_list
     key = ''.join([str(x) for x in sorted(defen)]) + str(region)
+    logger.info(f'查询阵容：{key}')
     value = int(time.time())
 
     curpath = dirname(__file__)
@@ -133,6 +134,7 @@ async def do_query(id_list, user_id, region=1, raw=0):
         buffer = json.load(fp)
 
     if (value - buffer.get(key, 0) < 259200) and (exists(join(curpath, f'buffer/{key}.json'))):  # 三天内查询过 直接返回
+        logger.info('存在近缓存，直接使用')
         with open(join(curpath, f'buffer/{key}.json'), 'r', encoding="utf-8") as fp:
             result = json.load(fp)
     else:  # 尝试查询；若失败，尝试降级，返回缓存结果；若无缓存，寄
@@ -140,8 +142,8 @@ async def do_query(id_list, user_id, region=1, raw=0):
         if exists(join(curpath, f'buffer/{key}.json')):
             with open(join(curpath, f'buffer/{key}.json'), 'r', encoding="utf-8") as fp:
                 degrade_result = json.load(fp)
+                logger.info("存在远缓存，尝试更新")
 
-        isquerysucceed = True
         id_list = [x * 100 + 1 for x in id_list]
         header = {
             "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.87 Safari/537.36",
@@ -156,45 +158,31 @@ async def do_query(id_list, user_id, region=1, raw=0):
             "ts": int(time.time()),
             "region": region,
         }
-        logger.debug(f"Arena query {payload=}")
 
         if querylock.locked():
             await asyncio.sleep(5)
         async with querylock:
+            res = None
             try:
                 resp = await aiorequests.post(
                     "https://api.pcrdfans.com/x/v1/search",
                     headers=header,
                     json=payload,
-                    timeout=20,
+                    timeout=8,
                 )
                 res = await resp.json()
-                logger.debug(f"len(res)={len(res)}")
-            except Exception as e:
-                logger.exception(e)
-                isquerysucceed = False
+                if res["code"]:
+                    raise Exception()
+                result = res["data"]["result"]
+            except Exception as e:  # 查询失败 尝试降级
                 if degrade_result:
+                    logger.info("查询失败，使用缓存")
                     result = degrade_result
                 else:
+                    logger.info("查询失败，返回None")
                     return None
-
-            if res["code"]:
-                logger.error(f"Arena query failed.\nResponse={res}\nPayload={payload}")
-                isquerysucceed = False
-                if degrade_result:
-                    result = degrade_result
-                else:
-                    raise aiorequests.HTTPError(response=res)
-
-            result = res.get("data", {}).get("result")
-            if result is None:
-                isquerysucceed = False
-                if degrade_result:
-                    result = degrade_result
-                else:
-                    return None
-
-            if isquerysucceed:
+            else:
+                logger.info("查询成功 保存结果")
                 buffer[key] = value
 
                 with open(bufferpath, 'w', encoding="utf-8") as fp:
@@ -219,7 +207,7 @@ async def do_query(id_list, user_id, region=1, raw=0):
             "my_down": len(dislikes),
             "user_like": 1 if user_id in likes else -1 if user_id in dislikes else 0,
         })
-
+    logger.info(f'共有{len(ret)}条结果')
     return ret
 
 
