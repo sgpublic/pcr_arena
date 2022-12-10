@@ -831,11 +831,11 @@ async def __arena_query(bot, ev: CQEvent, region: int, defen="", raw=0, only_use
         else:
             return []
 
-    res = res[:min(10, len(res))]  # 限制显示数量，截断结果
     if raw:
         return res
 
     # 发送回复
+    res = res[:10]  # 限制显示数量，截断结果
     sv.logger.info('Arena generating picture...')
     teams = await render_atk_def_teams(res)
     teams = pic2b64(teams)
