@@ -540,9 +540,9 @@ async def _arena_query(bot, ev: CQEvent, region: int):
             if len(set(query_team)) == 1 and query_team[0] == 1000:  # 1000 1000 1000 1000 1000 pjjc情况
                 continue
 
-            if len(query_team) == 4:
-                boxDict[query_index].append(1000)
-                continue
+            # if len(query_team) == 4:
+            #     boxDict[query_index].append(1000)
+            #     continue
 
             records = await __arena_query(bot, ev, region, query_team, 1)
 

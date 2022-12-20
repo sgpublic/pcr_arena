@@ -39,6 +39,14 @@
 > 
 > ![](images/pjjc1.png)
 
+> 近似解查询
+>
+> ![](images/approx.png)
+
+> 各种情况混搭
+>
+> ![](images/misc.png)
+
 ————以下为原README————
 
 本模块基于 0皆无0（NGA uid=60429400）dalao的[PCR姬器人：可可萝·Android](https://bbs.nga.cn/read.php?tid=18434108)，移植至nonebot框架而成。
