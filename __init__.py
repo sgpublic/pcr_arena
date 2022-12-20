@@ -7,7 +7,7 @@ from collections import defaultdict
 from PIL import Image, ImageDraw, ImageFont, ImageColor
 
 import hoshino
-from hoshino import Service, R
+from hoshino import Service, R, aiorequests
 from hoshino.typing import *
 from hoshino.util import FreqLimiter, concat_pic, pic2b64, silence
 
@@ -15,7 +15,7 @@ from .. import chara
 from .. import _pcr_data
 from .record import update_dic, update_record
 from os.path import dirname, join, exists
-from os import remove
+from os import remove, listdir
 import numpy as np
 import json
 from io import BytesIO
@@ -479,7 +479,7 @@ async def getUnit(img2):
 
 
 async def get_pic(address):
-    return requests.get(address, timeout=20).content
+    return await (await aiorequests.get(address, timeout=5)).content
 
 
 async def _arena_query(bot, ev: CQEvent, region: int):
@@ -600,7 +600,7 @@ def recommend2Teams(already_used_units: List[int]):
         team_mix = already_used_units + record_4_1 + record_4_2
         if len(team_mix) == len(set(team_mix)):  # 推荐配队成功
             # print(f'\n\n成功配队{already_used_units}\n{record_4_1}\n{record_4_2}')  # test
-            return {"atk": [chara.fromid(uid_6 // 100, uid_6 % 100 // 10) for uid_6 in record_6_1], "team_type": "frequency"}, {"atk": [chara.fromid(uid_6 // 100, uid_6 % 100 // 10) for uid_6 in record_6_2], "team_type": "frequency"}
+            return {"atk": [chara.fromid(uid_6 // 100, uid_6 % 100 // 10) for uid_6 in record_6_2], "team_type": "frequency"}, {"atk": [chara.fromid(uid_6 // 100, uid_6 % 100 // 10) for uid_6 in record_6_1], "team_type": "frequency"}
 
     return "placeholder", "placeholder"
 
@@ -878,3 +878,21 @@ async def _update_dic_cron():
             best_atk_records = json.load(fp)
     except:
         pass
+
+
+# @sv.on_fullmatch('恢复竞技场查询记录')
+def restore_record(bot, ev):
+    curpath = dirname(__file__)
+    bufferpath = join(curpath, 'buffer/')
+    with open(join(bufferpath, "buffer.json"), "r", encoding="utf-8") as fp:
+        buffer = json.load(fp)
+
+    for filename in listdir(bufferpath):
+        if len(filename) != 26:
+            continue
+        filename = filename[:-5]
+        if filename not in buffer:
+            buffer[filename] = 1670000000
+
+    with open(join(bufferpath, "buffer.json"), "w", encoding="utf-8") as fp:
+        json.dump(buffer, fp, ensure_ascii=False, indent=4)
