@@ -1,0 +1,4 @@
+requests>=2.23.0
+wasmtime~=20.0.0
+pythonnet~=3.0.3
+ujson~=5.9.0

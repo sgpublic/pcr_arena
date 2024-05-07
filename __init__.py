@@ -1,29 +1,20 @@
 import base64
-from random import random
-import re
-import time
-import asyncio
-from collections import defaultdict
-from PIL import Image, ImageDraw, ImageFont, ImageColor
-
-import hoshino
-from hoshino import Service, R, aiorequests
-from hoshino.typing import *
-from hoshino.util import FreqLimiter, concat_pic, pic2b64, silence
-
-from .. import chara
-from .. import _pcr_data
-from .record import update_dic, update_record
-from os.path import dirname, join, exists
-from os import remove, listdir
-import numpy as np
+import html
 import json
+import re
 from io import BytesIO
-import requests
-import copy
-from math import log
+from os import remove, listdir
+from os.path import dirname, join, exists
 
 import cv2
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont, ImageColor
+
+from hoshino import Service, R, aiorequests
+from hoshino.typing import *
+from hoshino.util import FreqLimiter, pic2b64
+from .record import update_dic, update_record
+from .. import chara
 
 sv_help = '''
 [怎么拆] 接防守队角色名 查询竞技场解法
@@ -97,7 +88,7 @@ async def render_atk_def_teams(entries, border_pix=5):
     icon_size = 64
     small_icon_size = 32
     im = Image.new('RGBA', (5 * icon_size + 100, n * (icon_size + border_pix) - border_pix), (255, 255, 255, 255))
-    font = ImageFont.truetype('msyh.ttc', 16)
+    font = ImageFont.truetype(join(dirname(__file__), 'msyh.ttf'), 16)
     draw = ImageDraw.Draw(im)
     for i, e in enumerate(entries):
         if len(e) == 0:  # [] 视为空行
@@ -493,7 +484,7 @@ async def _arena_query(bot, ev: CQEvent, region: int):
     ret = re.match(r"\[CQ:image,file=(.*),url=(.*)\]", str(ev.message))
     if ret:
         # await bot.send(ev, "recognizing")
-        image = Image.open(BytesIO(await get_pic(ret.group(2))))
+        image = Image.open(BytesIO(await get_pic(html.unescape(ret.group(2)))))
         boxDict, s = await getBox(image)
 
         if boxDict == []:

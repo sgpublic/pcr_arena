@@ -1,11 +1,11 @@
-from hoshino import aiorequests, config, util
+import os.path
+
+from hoshino import aiorequests, config
+from .sign import create_sign, gen_nonce
 from .. import chara
 from . import sv
 
-try:
-    import ujson as json
-except:
-    import json
+import ujson as json
 
 import asyncio
 import time
@@ -44,8 +44,9 @@ def findApproximateTeamResult(id_list):
     logger.info(f'查询近似解：{list(sorted(id_list))}')
     buffer = {}
     result = []
-    with open(bufferpath, 'r', encoding="utf-8") as fp:
-        buffer = json.load(fp)
+    if os.path.exists(bufferpath):
+        with open(bufferpath, 'r', encoding="utf-8") as fp:
+            buffer = json.load(fp)
     for buffer_id_str in buffer:  # "100110021018105211222"
         if len(buffer_id_str) != 21:
             continue
@@ -132,8 +133,9 @@ async def do_query(id_list, region=1, try_cnt=1):
     value = int(time.time())
 
     buffer = {}
-    with open(bufferpath, 'r', encoding="utf-8") as fp:
-        buffer = json.load(fp)
+    if os.path.exists(bufferpath):
+        with open(bufferpath, 'r', encoding="utf-8") as fp:
+            buffer = json.load(fp)
 
     if (value - buffer.get(key, 0) < 3600 * 24 * 5) and (exists(join(curpath, f'buffer/{key}.json'))):  # 5天内查询过 直接返回
         logger.info(f'    存在本服({region})近缓存，直接使用')
@@ -170,18 +172,33 @@ async def do_query(id_list, region=1, try_cnt=1):
         else:
             id_list_query = [x * 100 + 1 for x in id_list]
             header = {
-                "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.87 Safari/537.36",
-                "authorization": __get_auth_key(),
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36 Edg/87.0.664.66",
+                "Referer": "https://pcrdfans.com/",
+                "Origin": "https://pcrdfans.com",
+                "Sec-Fetch-Dest": "empty",
+                "Sec-Fetch-Mode": "cors",
+                "Sec-Fetch-Site": "same-site",
+                "Accept": "*/*",
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
+                "Authorization": "",
+                "Content-Type": "application/json",
             }
             payload = {
-                "_sign": "a",
                 "def": id_list_query,
-                "nonce": "a",
+                "language": 0,
+                "nonce": gen_nonce(),
                 "page": 1,
+                "region": region,
                 "sort": 1,
                 "ts": int(time.time()),
-                "region": region,
             }
+            try:
+                payload['_sign'] = create_sign(payload)
+            except Exception as err:
+                logger.error(f"生成 sign 失败: {err}")
+                payload['_sign'] = 'a'
+            raw_request = json.dumps(payload, ensure_ascii=False)
+            logger.debug("pcrd payload: %s" % raw_request)
 
             query_again = False
             should_sleep = False
@@ -195,7 +212,8 @@ async def do_query(id_list, region=1, try_cnt=1):
                     resp = await aiorequests.post(
                         "https://api.pcrdfans.com/x/v1/search",
                         headers=header,
-                        json=payload,
+                        data=raw_request.encode('utf-8'),
+                        json=False,
                         timeout=5,
                     )
                     res = await resp.json()
@@ -204,7 +222,8 @@ async def do_query(id_list, region=1, try_cnt=1):
                         logger.info(f'        服务器报错：返回值{res["code"]}')
                         raise Exception()
                     result = res["data"]["result"]
-                except:
+                except Exception as err:
+                    logger.warn("    请求失败: %s" % err)
                     if degrade_result:
                         logger.info("    查询失败，使用缓存")
                         result = degrade_result
