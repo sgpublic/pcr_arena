@@ -11,6 +11,7 @@ from os.path import join, dirname
 _curpath = join(dirname(__file__), "buffer/pcrd")
 os.makedirs(_curpath, exist_ok=True)
 pcrd_wasm_path = join(_curpath, "pcrd.wasm")
+# https://github.com/sgpublic/pcrd-wrapper/tree/release
 wasm_dll = join(_curpath, "WebAssembly.dll")
 pcrd_wrapper_dll = join(_curpath, "Pcrd.dll")
 go_wasm_wrapper_dll = join(_curpath, "GoWasmWrapper.dll")
@@ -20,7 +21,7 @@ pythonnet.load("coreclr")
 import clr
 
 def _update_version() -> bool:
-    result1 = _checkout_file(pcrd_wasm_path, arena.WASM_URL, header={
+    result1 = _checkout_file(pcrd_wasm_path, arena.PCRD_WASM_URL, header={
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36 Edg/87.0.664.66",
         "Referer": "https://pcrdfans.com/",
         "Origin": "https://pcrdfans.com/",
@@ -39,7 +40,7 @@ def _update_version() -> bool:
 
 def _checkout_dll(path: str) -> bool:
     filename = os.path.basename(path)
-    return _checkout_file(path, f"{arena.WRAPPER_URL}/{filename}", header={
+    return _checkout_file(path, f"{arena.PCRD_WRAPPER_URL}/{filename}", header={
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36 Edg/87.0.664.66",
     })
 
