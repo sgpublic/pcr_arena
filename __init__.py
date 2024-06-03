@@ -22,6 +22,7 @@ sv_help = '''
 [点踩] 接作业id 评价作业
 '''.strip()
 sv = Service('pcr-arena', help_=sv_help, bundle='pcr查询')
+logger = sv.logger
 
 from . import arena
 
@@ -478,80 +479,92 @@ async def _arena_query(bot, ev: CQEvent, region: int):
 
     if not lmt.check(uid):
         await bot.finish(ev, '您查询得过于频繁，请稍等片刻', at_sender=True)
+        return
 
     # 处理输入数据
-    defen = ""
-    ret = re.match(r"\[CQ:image,file=(.*),url=(.*)\]", str(ev.message))
-    if ret:
-        # await bot.send(ev, "recognizing")
-        image = Image.open(BytesIO(await get_pic(html.unescape(ret.group(2)))))
-        boxDict, s = await getBox(image)
-
-        if boxDict == []:
-            await bot.finish(ev, "未识别到有4个及以上角色的阵容！")
-
-        try:
-            if region == -20:
-                s += f'\narr_id_4={boxDict}'
-            await bot.send(ev, s)
-        except:
-            pass
-
-        if region == -20:
-            return
-
-        if len(boxDict) == 1:
-            await __arena_query(bot, ev, region, boxDict[0])
-            return
-
-        if len(boxDict) > 3:
-            await bot.finish(ev, "请截图pjjc详细对战记录（对战履历详情）（含敌我双方2或3队阵容）")
-
-        team_has_result = 0
-        lmt.start_cd(uid)
-
-        all_query_records = [[] for _ in range(len(boxDict))]
-        '''
-        [
-            [   
-                [None, -100, None], # 通配，等待从缓存中获取配队
-                [(第1队第1解),权值,render(渲染该队所需数据)]
-                [(第1队第2解),权值,render]
-            ],
-            [
-                [None, -100, None], # 通配
-                [(第2队第1解),权值,render] 
-            ]
-        ]
-        '''
-
-        for query_index, query_team in enumerate(boxDict):
-            all_query_records[query_index].append([None, -100, "placeholder"])
-
-            if len(set(query_team)) == 1 and query_team[0] == 1000:  # 1000 1000 1000 1000 1000 pjjc情况
+    image = None
+    if isinstance(ev.message, Message):
+        for segment in ev.message:
+            assert isinstance(segment, MessageSegment)
+            if segment.type != 'image':
                 continue
+            image = segment.data['url']
+            break
 
-            # if len(query_team) == 4:
-            #     boxDict[query_index].append(1000)
-            #     continue
-
-            records = await __arena_query(bot, ev, region, query_team, 1)
-
-            if records == []:
-                continue
-
-            team_has_result += 1
-
-            for record in records:
-                record_team = tuple([chara_obj.id for chara_obj in record["atk"]])
-                all_query_records[query_index].append([record_team, record["val"], record])
-
-        if team_has_result == 0 and len(boxDict) == 3:
-            await bot.finish(ev, "均未查询到解法！")
-
-        await generateCollisionFreeTeam(bot, ev, all_query_records, team_has_result, region, boxDict)  # 最多允许补两队
-    else:
+    if image is None:
         await __arena_query(bot, ev, region)
+        return
+
+    logger.info(f"receive request: {image}")
+    image = Image.open(BytesIO(await get_pic(image)))
+    boxDict, s = await getBox(image)
+
+    if boxDict == []:
+        await bot.finish(ev, "未识别到有4个及以上角色的阵容！")
+        return
+
+    try:
+        if region == -20:
+            s += f'\narr_id_4={boxDict}'
+        await bot.send(ev, s)
+    except Exception as _:
+        pass
+
+    if region == -20:
+        return
+
+    if len(boxDict) == 1:
+        await __arena_query(bot, ev, region, boxDict[0])
+        return
+
+    if len(boxDict) > 3:
+        await bot.finish(ev, "请截图pjjc详细对战记录（对战履历详情）（含敌我双方2或3队阵容）")
+        return
+
+    team_has_result = 0
+    lmt.start_cd(uid)
+
+    all_query_records = [[] for _ in range(len(boxDict))]
+    '''
+    [
+        [   
+            [None, -100, None], # 通配，等待从缓存中获取配队
+            [(第1队第1解),权值,render(渲染该队所需数据)]
+            [(第1队第2解),权值,render]
+        ],
+        [
+            [None, -100, None], # 通配
+            [(第2队第1解),权值,render] 
+        ]
+    ]
+    '''
+
+    for query_index, query_team in enumerate(boxDict):
+        all_query_records[query_index].append([None, -100, "placeholder"])
+
+        if len(set(query_team)) == 1 and query_team[0] == 1000:  # 1000 1000 1000 1000 1000 pjjc情况
+            continue
+
+        # if len(query_team) == 4:
+        #     boxDict[query_index].append(1000)
+        #     continue
+
+        records = await __arena_query(bot, ev, region, query_team, 1)
+
+        if records == []:
+            continue
+
+        team_has_result += 1
+
+        for record in records:
+            record_team = tuple([chara_obj.id for chara_obj in record["atk"]])
+            all_query_records[query_index].append([record_team, record["val"], record])
+
+    if team_has_result == 0 and len(boxDict) == 3:
+        await bot.finish(ev, "均未查询到解法！")
+        return
+
+    await generateCollisionFreeTeam(bot, ev, all_query_records, team_has_result, region, boxDict)  # 最多允许补两队
 
 
 def recommend1Team(already_used_units: List[int]):
